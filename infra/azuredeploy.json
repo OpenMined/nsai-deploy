@@ -1,0 +1,91 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "vmName": {
+        "type": "string",
+        "defaultValue": "docker-vm",
+        "metadata": {
+          "description": "Name of the virtual machine"
+        }
+      },
+      "adminUsername": {
+        "type": "string",
+        "metadata": {
+          "description": "Admin username for the VM"
+        }
+      },
+      "adminPassword": {
+        "type": "securestring",
+        "metadata": {
+          "description": "Admin password for the VM"
+        }
+      },
+      "environmentVariables": {
+        "type": "object",
+        "defaultValue": {
+          "APP_PORT": "8080",
+          "DATABASE_URL": "mysql://user:password@dbhost/dbname"
+        },
+        "metadata": {
+          "description": "Environment variables for Docker Compose"
+        }
+      }
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Resources/deployments",
+        "apiVersion": "2021-04-01",
+        "properties": {
+          "mode": "Incremental",
+          "expressionEvaluationOptions": {
+            "scope": "inner"
+          },
+          "template": {
+            "resources": [
+              {
+                "type": "Microsoft.Compute/virtualMachines",
+                "apiVersion": "2021-07-01",
+                "name": "[parameters('vmName')]",
+                "location": "[resourceGroup().location]",
+                "properties": {
+                  "hardwareProfile": {
+                    "vmSize": "Standard_B1s"
+                  },
+                  "osProfile": {
+                    "computerName": "[parameters('vmName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "customData": "[base64(concat('#!/bin/bash\n', variables('installDockerScript'), '\n', variables('dockerComposeScript')))]"
+                  },
+                  "storageProfile": {
+                    "imageReference": {
+                      "publisher": "Canonical",
+                      "offer": "UbuntuServer",
+                      "sku": "20.04-LTS",
+                      "version": "latest"
+                    },
+                    "osDisk": {
+                      "createOption": "FromImage"
+                    }
+                  },
+                  "networkProfile": {
+                    "networkInterfaces": [
+                      {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'), '-nic'))]"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "variables": {
+              "installDockerScript": "'sudo apt update && sudo apt install -y docker.io docker-compose && sudo systemctl enable --now docker'",
+              "dockerComposeScript": "[concat('echo \"', json(parameters('environmentVariables')), '\" > /home/azureuser/.env && docker-compose up -d')]"
+            }
+          }
+        }
+      }
+    ]
+  }
+  
