@@ -17,7 +17,7 @@
       {
         "type": "Microsoft.Network/virtualNetworks",
         "apiVersion": "2021-05-01",
-        "name": "dockervm-vnet",
+        "name": "syftbox-rag-vmnet",
         "location": "[resourceGroup().location]",
         "properties": {
           "addressSpace": {
@@ -36,21 +36,67 @@
         }
       },
       {
+        "type": "Microsoft.Network/publicIPAddresses",
+        "apiVersion": "2021-05-01",
+        "name": "syftbox-rag-publicip",
+        "location": "[resourceGroup().location]",
+        "properties": {
+          "publicIPAllocationMethod": "Dynamic",
+          "dnsSettings": {
+            "domainNameLabel": "[concat('syftbox-rag-vm-', uniqueString(resourceGroup().id))]"
+          }
+        }
+      },
+      {
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2021-05-01",
+        "name": "syftbox-rag-nsg",
+        "location": "[resourceGroup().location]",
+        "properties": {
+          "securityRules": [
+            {
+              "name": "SSH",
+              "properties": {
+                "protocol": "Tcp",
+                "sourcePortRange": "*",
+                "destinationPortRange": "22",
+                "sourceAddressPrefix": "*",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 1000,
+                "direction": "Inbound"
+              }
+            }
+          ]
+        }
+      },
+      {
         "type": "Microsoft.Network/networkInterfaces",
         "apiVersion": "2021-05-01",
         "name": "dockervm-nic",
         "location": "[resourceGroup().location]",
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/virtualNetworks', 'syftbox-rag-vmnet')]",
+          "[resourceId('Microsoft.Network/publicIPAddresses', 'syftbox-rag-publicip')]",
+          "[resourceId('Microsoft.Network/networkSecurityGroups', 'syftbox-rag-nsg')]"
+        ],
         "properties": {
           "ipConfigurations": [
             {
               "name": "ipconfig1",
               "properties": {
                 "subnet": {
-                  "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'dockervm-vnet', 'default')]"
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'syftbox-rag-vmnet', 'default')]"
+                },
+                "publicIPAddress": {
+                  "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'syftbox-rag-publicip')]"
                 }
               }
             }
-          ]
+          ],
+          "networkSecurityGroup": {
+            "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'syftbox-rag-nsg')]"
+          }
         }
       },
       {
@@ -58,7 +104,7 @@
         "apiVersion": "2021-04-01",
         "name": "docker-vm",
         "dependsOn": [
-          "dockervm-nic"
+          "[resourceId('Microsoft.Network/networkInterfaces', 'dockervm-nic')]"
         ],
         "properties": {
           "mode": "Incremental",
@@ -72,25 +118,30 @@
               {
                 "type": "Microsoft.Compute/virtualMachines",
                 "apiVersion": "2021-07-01",
-                "name": "dockervm-template",
+                "name": "syftbox-rag-vm",
                 "location": "[resourceGroup().location]",
+                "plan": {
+                  "name": "docker-compose-server-ubuntu-18-04-lts",
+                  "product": "docker-compose-server-ubuntu-18-04-lts",
+                  "publisher": "articentgroupllc1635512619530"
+                },
                 "properties": {
                   "hardwareProfile": {
-                    "vmSize": "Standard_B1s"
+                    "vmSize": "Standard_F4s_v2"
                   },
                   "osProfile": {
-                    "computerName": "docker-vm",
+                    "computerName": "syftbox-rag-vm",
                     "adminUsername": "azureuser",
-                    "adminPassword": "OpenMined123!",
-                    "customData": "[base64(concat('#!/bin/bash\n', variables('installDockerScript')))]"
+                    "adminPassword": "Testtest123",
+                    "customData": "[base64(variables('initScript'))]"
                   },
                   "storageProfile": {
-                    "imageReference": {
-                      "publisher": "Canonical",
-                      "offer": "0001-com-ubuntu-server-focal",
-                      "sku": "20_04-lts",
-                      "version": "latest"
-                    },
+                      "imageReference": {
+                        "publisher": "articentgroupllc1635512619530",
+                        "offer": "docker-compose-server-ubuntu-18-04-lts",
+                        "sku": "docker-compose-server-ubuntu-18-04-lts",
+                        "version": "latest"
+                      },
                     "osDisk": {
                       "createOption": "FromImage"
                     }
@@ -106,11 +157,23 @@
               }
             ],
             "variables": {
-              "installDockerScript": "'sudo apt update && sudo apt install -y docker.io docker-compose && sudo systemctl enable --now docker'"
+              "scriptLines": [
+                "#!/bin/bash",
+                "sudo su azureuser",
+                "cd /home/azureuser",
+                "git clone https://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@github.com/OpenMined/fraggle.git --branch=nsai-demo",
+                "sudo usermod -aG docker azureuser",
+                "newgrp docker",
+                "curl -L -o /home/azureuser/nab.zip \"https://drive.google.com/uc?export=download&id=10z8hY4rcjSiID3G0dQkzJ87zQ8oj_xYA\"",
+                "mkdir -p /home/azureuser/fraggle/data/nsai-demo",
+                "unzip /home/azureuser/nab.zip -d /home/azureuser/fraggle/data/nsai-demo",
+                "cd /home/azureuser/fraggle/syftbox-rag",
+                "docker-compose up"
+              ],
+              "initScript": "[join(variables('scriptLines'), '\n')]"
             }
           }
         }
       }
     ]
   }
-  
